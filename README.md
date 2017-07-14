@@ -17,3 +17,9 @@ This code sets the basic registers to allow the dspic33f09gs302 to read in data 
        InitADC() -  This sets up the ADC. It is set up for interrputs. The interrupt used is Timer1. Everytime Timer1 reaches its PR1                         value it triggers an ADC interrupt and reads AN0.
        
        InitTimer1() - Sets Timer1 registers. No interrupt is needed since the ADC is set to trigger when the timer reaches the PR1 value
+
+Known issues:
+
+1.)    I have a pot connected to the 3.3V (VDD) supply from the Microstick II. When I adjust the pot the voltage moves up and down and the        ADC values I am readin in changes. The issue right now is the ADC is 10 bits and the UART register is only 9 bits long. I still            need to address this. As of now I can't print accurate values to a serial terminal because of this.
+
+2.)    For some reason when try to simulate the program it will not enter the ADC interrupt. I try to place a breakpoint in the interrupt        but it never enters the interrupt. Not sure if this is a limitation of the simulator or if there is a work around. 
