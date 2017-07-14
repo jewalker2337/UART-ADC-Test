@@ -1,0 +1,249 @@
+/*
+ * File:   main.c
+ * Author: jewalker
+ *
+ * Created on July 7, 2017, 1:55 PM
+ */
+
+
+#include "xc.h"
+#include "p33fxxxx.h"
+
+#define FOSC    (80000000ULL)
+#define FCY     (FOSC/2)
+#define high 1
+#define low 0
+#define Baud_Rate 259 // (Fcy/(16 * Buad Rate)) - 1 , Baud rate = 9600
+
+
+
+
+ 
+ /*******************************
+ * Set device configuration values
+********************************/
+_FOSCSEL(FNOSC_FRC    & IESO_ON);
+_FOSC(FCKSM_CSECME & OSCIOFNC_OFF & POSCMD_NONE & IOL1WAY_ON);
+_FWDT(FWDTEN_OFF);
+_FICD(JTAGEN_OFF); 
+
+/*Global Variables*/
+
+int j,time,i,Sample1;
+int TestData[] = {'T','E','S','T'};
+
+//Prototypes
+
+void InitADC(void);
+void InitUART(void);
+void InitOutPutPins(void);
+void Delay(int);
+void RemapPins(void);
+void SendData(void);
+void InitTimer1(void);
+
+int main(void) {
+ /* **************Configure PLL for FOSC=80MHz using 7.37MHz FRC*****************/
+         PLLFBD = 41; // M = 43
+         CLKDIVbits.PLLPRE  = 0;  // N1 = 2
+         CLKDIVbits.PLLPOST = 0;  // N2 = 2   
+ /*******************************************************************************/    
+  
+/***************Initiate Clock Switch to Internal FRC with PLL (NOSC = 0b001)************/
+         
+     __builtin_write_OSCCONH( 0x01 );
+     __builtin_write_OSCCONL( 0x01 );
+  
+      // Wait for Clock switch to occur
+     while ( OSCCONbits.COSC != 0b001 );
+ 
+     // Wait for PLL to lock
+     while ( OSCCONbits.LOCK != 1 );
+     
+/*****************************************************************************************/
+   
+       
+
+       InitOutPutPins();
+       RemapPins();
+       InitUART();
+       InitADC();
+       InitTimer1();
+
+       
+       
+       
+     while(1)
+     {
+         
+         LATBbits.LATB5 = 0;
+ 
+     } 
+       return(0);
+ }
+
+
+
+
+
+void InitUART(void)
+{       
+        U1MODEbits.UARTEN = 0; // Disable UART 
+        U1MODEbits.STSEL = 0; // 1-stop bit
+        U1MODEbits.PDSEL = 0; // No Parity, 8-data bits
+        U1MODEbits.ABAUD = 0; // Autobaud Disabled
+        U1MODEbits.BRGH = 0; // Low Speed mode
+    
+        U1BRG = Baud_Rate; // BAUD Rate Setting for 9600
+        U1STAbits.UTXINV = 1; // bus idle state low
+        U1STAbits.URXISEL = 0; // Tx interrput mode. see pg 7 of DS70000582E (UART module))
+        U1STAbits.UTXISEL0 = 0; // Interrupt after one Tx character is transmitted
+        U1STAbits.UTXISEL1 = 0;   
+        IEC0bits.U1TXIE = 1; // Enable UART TX interrupt        
+        U1MODEbits.UARTEN = 1; // Enable UART       
+        U1STAbits.UTXEN = 1; // Enable UART Tx
+        
+        
+        Delay(50000);
+        U1TXREG = 'a'; // Transmit one character
+}
+
+
+void InitADC(void)
+{
+    ADCONbits.FORM = 0; // Output in Integer Format
+    ADCONbits.EIE = 0; // Enable Early Interrupt
+    ADCONbits.ORDER = 0; // Normal Order of Conversion
+    ADCONbits.SEQSAMP = 0; // Simultaneous Sampling
+    ADCONbits.ASYNCSAMP = 1; // Asynchronous Sampling
+    ADCONbits.SLOWCLK = 1; // High Frequency Clock Input
+    ADCONbits.ADCS = 5; // Clock Divider Selection
+    
+    ADCPC0bits.TRGSRC0=0b01100; 
+     /*Trigger source:
+     * 0b00001 = Individual software trig source
+     * 0b00010 = global software trigger source
+     * 0b11111 = Timer2 match trigger Source 
+     * 0b01100 = Timer1 source
+     */
+    
+    ADPCFGbits.PCFG0 = 0; // AN0 is configured as analog input
+    ADPCFGbits.PCFG1 = 0; // AN1 configured as analog input
+    
+    IPC27bits.ADCP0IP = 1; // Set ADC Pair 0 Interrupt Priority (Level 1)
+    IFS6bits.ADCP0IF = 0; // Clear ADC Pair 0 Interrupt Flag
+    IEC6bits.ADCP0IE = 1; // Enable ADC Pair 0 Interrupt
+    ADCONbits.ADON = 1; // Enable ADC Module
+}
+
+
+void __attribute__((interrupt, no_auto_psv))_ADCP0Interrupt (void)
+//void __attribute__((__interrupt__)) _ADCInterrupt(void)
+{   
+    IFS6bits.ADCP0IF = 0;
+    LATBbits.LATB5 = 1; // blink an led
+    Sample1 = ADCBUF0;
+    
+}
+
+/*Timer1 Interrupt Service Routine*/
+void __attribute__((interrupt, auto_psv))_T1Interrupt( void )
+{   
+    IFS0bits.T1IF = 0; // clear interrupt flag
+    //LATBbits.LATB15 = ~LATBbits.LATB15; // blink an led
+}
+
+void __attribute__((__interrupt__)) _U1TXInterrupt(void)
+{
+    IFS0bits.U1TXIF = 0; // Clear TX Interrupt flag
+    U1TXREG = Sample1;
+    //LATAbits.LATA0 = ~LATAbits.LATA0; // blink an led
+    
+  /*  
+   if (i>3) // only 4 characters stored
+    {
+        i=0;
+    }
+    
+        LATAbits.LATA0 = ~LATAbits.LATA0; // blink an led
+        U1TXREG = TestData[i];// unload array to UART Tx reg
+        i++; // increment
+    
+   */
+}
+   
+
+
+
+
+
+
+void InitTimer1(void)
+{
+    T1CONbits.TSIDL = 0; //continue timer even when device is in idle mode.
+    T1CONbits.TGATE = 0;// --> when TCS = 0 this bit is ignored
+    T1CONbits.TCKPS1 = 2; // 0=1:1, 1=1:8, 2=1:64, 3=1:256
+    //T1CONbits.TSYNC = 0 --> Ignored when TCS=0
+    T1CONbits.TCS = 0; //Internal clock. (FOSC/2)
+    PR1 = (2625*2);//was 5208/2
+    
+    //IPC0bits.IC1IP = 1; //set interrupt priority
+    //IFS0bits.T1IF = 0; //clear the timer1 interrupt flag
+    //IEC0bits.T1IE = 1; //Enable timer1 interrupt
+    
+    T1CONbits.TON = 1; //Timer ON
+}
+
+
+
+
+void InitOutPutPins(void)
+{
+         
+       TRISA = 0b0000000000000011;// RAO/RA1 are mapped as inputs. These are ADC Pair 0
+       TRISB = 0b0000000000000011; 
+/*
+ * RA0/RA1 re inputs
+ * RA0 - ADC --> AN0
+ * RA1 - ADC --> AN1
+ * 
+ * RB0,RB1,RB9 are inputs - RB1 will be used for UART Rx, RB0/RB9 = ADC
+ * RB0/RB1/RB9 - Inputs 
+ * RB0 - ?/
+ * RB1 - Future use for UART Rx
+ * RB2 - UART Tx
+ * 
+*/     
+}
+
+void RemapPins(void)
+{
+    OSCCONL = 0x46; // see page 151 of dspic33fj06gs302 manual
+    OSCCONL = 0x57; // see page 151 of dspic33fj06gs302 manual
+    OSCCONbits.IOLOCK = 0; // Unlock remappable I/O
+
+    //__builtin_write_OSCCONL(OSCCON & 0xDF);
+    
+   // RPINR18bits.U1RXR = 1;//RP1, Pin 9 (RB1) UART Rx see page 159 dspic33fj06gs302 manual
+    RPOR1bits.RP3R = 0b000011;//RP2, Pin 10(RB2) UART Tx see page 150 of dspic33fj06gs302 manual
+    
+   // __builtin_write_OSCCONL(OSCCON | 0x40); 
+     
+    OSCCONL = 0x57; // see page 151 of dspic33fj06gs302 manual
+    OSCCONL = 0x46; // see page 151 of dspic33fj06gs302 manual
+    OSCCONbits.IOLOCK = 1; // Lock remappable I/O
+
+}
+
+
+
+
+
+void Delay(time)
+{
+ j=0; 
+ while(j<time) //while(j<630) //roughly 0.254ms delay. 315=~60hz
+ {
+     j++;
+ }
+}
