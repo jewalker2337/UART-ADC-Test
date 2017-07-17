@@ -8,6 +8,8 @@
 
 #include "xc.h"
 #include "p33fxxxx.h"
+//#include <libpic30.h> 
+#include <stdio.h>
 
 #define FOSC    (80000000ULL)
 #define FCY     (FOSC/2)
@@ -29,9 +31,8 @@ _FICD(JTAGEN_OFF);
 
 /*Global Variables*/
 
-int j,time,i,Sample1;
-int TestData[] = {'T','E','S','T'};
-
+int j,time,i,k;
+int Sample1;
 //Prototypes
 
 void InitADC(void);
@@ -71,13 +72,13 @@ int main(void) {
        InitTimer1();
 
        
-       
+    
        
      while(1)
      {
          
          LATBbits.LATB5 = 0;
- 
+         
      } 
        return(0);
  }
@@ -120,6 +121,7 @@ void InitADC(void)
     ADCONbits.ADCS = 5; // Clock Divider Selection
     
     ADCPC0bits.TRGSRC0=0b01100; 
+    
      /*Trigger source:
      * 0b00001 = Individual software trig source
      * 0b00010 = global software trigger source
@@ -138,12 +140,21 @@ void InitADC(void)
 
 
 void __attribute__((interrupt, no_auto_psv))_ADCP0Interrupt (void)
-//void __attribute__((__interrupt__)) _ADCInterrupt(void)
 {   
     IFS6bits.ADCP0IF = 0;
     LATBbits.LATB5 = 1; // blink an led
-    Sample1 = ADCBUF0;
     
+ // if(i >=10 )
+ // {
+ //     i=0;
+ // }
+ // else
+ // {
+     Sample1 = ADCBUF0;   
+ // }
+    //ADCBUF0 = 0;
+  //  i++;  
+        
 }
 
 /*Timer1 Interrupt Service Routine*/
@@ -155,21 +166,21 @@ void __attribute__((interrupt, auto_psv))_T1Interrupt( void )
 
 void __attribute__((__interrupt__)) _U1TXInterrupt(void)
 {
+    /*Below Sample1 is shifted 2 places to the right. This is because the ADC value is 10 bits long 
+     * and the Tx register is 8 bits long. By doing this we are turning our 10 bit ADC into 
+     * an 8 bit adc by chopping off the first two bits (LBSs). This is not the best way but 
+     * for it is easy and works for now. The below was tested with a pot and cool Term 
+     * software.
+     * **********************REMEBER THE ADC HAS A Vref OF 3.3Vdc*********************************** 
+     */
+    
     IFS0bits.U1TXIF = 0; // Clear TX Interrupt flag
+
+    Sample1 =  (Sample1>>2);  // shift 2 places right
+    
     U1TXREG = Sample1;
-    //LATAbits.LATA0 = ~LATAbits.LATA0; // blink an led
-    
-  /*  
-   if (i>3) // only 4 characters stored
-    {
-        i=0;
-    }
-    
-        LATAbits.LATA0 = ~LATAbits.LATA0; // blink an led
-        U1TXREG = TestData[i];// unload array to UART Tx reg
-        i++; // increment
-    
-   */
+
+    Sample1 = 0;
 }
    
 
